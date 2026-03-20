@@ -9,7 +9,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # Import your models so Alembic can detect schema changes
-from app.models import Base  # noqa: F401  — registers all tables
+from app.base import Base  # noqa: F401  — registers all tables
 
 config = context.config
 

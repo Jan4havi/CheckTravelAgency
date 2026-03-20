@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.models import AgencyProfile, UserProfile
+from app.modules.agency.agency_model import AgencyProfile
+from app.modules.user.user_model import UserProfile
 
 bearer_scheme = HTTPBearer()
 

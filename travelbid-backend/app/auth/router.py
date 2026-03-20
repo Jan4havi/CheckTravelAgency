@@ -38,10 +38,11 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models import AgencyProfile, UserProfile
+from app.modules.agency.agency_model import AgencyProfile
+from app.modules.user.user_model import UserProfile
 from jose import JWTError
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # In-memory store for password-reset tokens.
 # In production → store in Redis or a DB table with expiry.
@@ -71,7 +72,7 @@ def _build_token_response(user: UserProfile | AgencyProfile) -> TokenResponse:
 
 # ─── Signup — Traveler ────────────────────────────────────────────────────────
 
-@router.post("/signup/traveler", response_model=TokenResponse, status_code=201)
+@auth_router.post("/signup/traveler", response_model=TokenResponse, status_code=201)
 def signup_traveler(payload: TravelerSignupRequest, db: Session = Depends(get_db)):
     if _email_taken(db, payload.email):
         raise HTTPException(
@@ -95,7 +96,7 @@ def signup_traveler(payload: TravelerSignupRequest, db: Session = Depends(get_db
 
 # ─── Signup — Agency ─────────────────────────────────────────────────────────
 
-@router.post("/signup/agency", response_model=TokenResponse, status_code=201)
+@auth_router.post("/signup/agency", response_model=TokenResponse, status_code=201)
 def signup_agency(payload: AgencySignupRequest, db: Session = Depends(get_db)):
     if _email_taken(db, payload.email):
         raise HTTPException(
@@ -123,7 +124,7 @@ def signup_agency(payload: AgencySignupRequest, db: Session = Depends(get_db)):
 
 # ─── Login ────────────────────────────────────────────────────────────────────
 
-@router.post("/login", response_model=TokenResponse)
+@auth_router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     email = payload.email.lower()
 
@@ -150,7 +151,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 # ─── Refresh Token ────────────────────────────────────────────────────────────
 
-@router.post("/refresh", response_model=TokenResponse)
+@auth_router.post("/refresh", response_model=TokenResponse)
 def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
     try:
         data = decode_token(payload.refresh_token)
@@ -182,7 +183,7 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 # ─── Logout (client-side only — invalidate on frontend) ──────────────────────
 
-@router.post("/logout", response_model=MessageResponse)
+@auth_router.post("/logout", response_model=MessageResponse)
 def logout(_: CurrentUser = Depends(get_current_user)):
     """
     Stateless JWT — just instruct the client to discard tokens.
@@ -193,7 +194,7 @@ def logout(_: CurrentUser = Depends(get_current_user)):
 
 # ─── Get Current User ─────────────────────────────────────────────────────────
 
-@router.get("/me", response_model=UserMeResponse)
+@auth_router.get("/me", response_model=UserMeResponse)
 def get_me(current_user: CurrentUser = Depends(get_current_user)):
     is_agency = isinstance(current_user, AgencyProfile)
     return UserMeResponse(
@@ -208,7 +209,7 @@ def get_me(current_user: CurrentUser = Depends(get_current_user)):
 
 # ─── Forgot Password ──────────────────────────────────────────────────────────
 
-@router.post("/forgot-password", response_model=MessageResponse)
+@auth_router.post("/forgot-password", response_model=MessageResponse)
 def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
     email = payload.email.lower()
     user = (
@@ -239,7 +240,7 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
 
 # ─── Reset Password ───────────────────────────────────────────────────────────
 
-@router.post("/reset-password", response_model=MessageResponse)
+@auth_router.post("/reset-password", response_model=MessageResponse)
 def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
     record = _reset_tokens.get(payload.token)
 

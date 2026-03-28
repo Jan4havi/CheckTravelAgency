@@ -125,7 +125,7 @@ export default function TopNav({ activePage }) {
 
             {/* Logout */}
             <div style={{ borderTop: `1px solid ${T.border}` }}>
-              <button onClick={() => { logout(); setMenuOpen(false); }}
+              <button onClick={() => { logout(); setMenuOpen(false); navigate('/'); }}
                 style={{ width: '100%', padding: '13px 20px', background: 'white', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '14px', color: '#ef4444', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '12px' }}
                 onMouseEnter={e => e.currentTarget.style.background = '#fff5f5'}
                 onMouseLeave={e => e.currentTarget.style.background = 'white'}>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../services/supabase';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { authAPI, getErrorMessage } from '../services/api';
 import { MdLock, MdVisibility, MdVisibilityOff, MdArrowForward, MdCheckCircle } from 'react-icons/md';
 import { FaPaperPlane } from 'react-icons/fa';
 
@@ -8,20 +8,26 @@ const T = { primary: '#e85d26', primaryLight: '#ff7d4d', accent: '#f5a623', text
 
 export default function ResetPassword() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
-  useEffect(() => {
-    supabase.auth.onAuthStateChange((event, session) => { if (event === 'PASSWORD_RECOVERY' && session) setSessionReady(true); });
-    supabase.auth.getSession().then(({ data: { session } }) => { if (session) setSessionReady(true); });
-  }, []);
+  // Token comes from the reset-link email as ?token=xxx
+  const token = searchParams.get('token');
+  const sessionReady = !!token;
 
-  const validatePassword = p => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/.test(p);
+  useEffect(() => {
+    if (!token) {
+      setError('Invalid or missing reset link. Please request a new one.');
+    }
+  }, [token]);
+
+  const validatePassword = p =>
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/.test(p);
 
   const handleReset = async (e) => {
     e.preventDefault();
@@ -30,11 +36,18 @@ export default function ResetPassword() {
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
     setLoading(true);
     try {
-      const { error: ue } = await supabase.auth.updateUser({ password });
-      if (ue) throw new Error(ue.message);
+      // POST /api/v1/auth/reset-password
+      await authAPI.resetPassword(token, password);
       setSuccess(true);
       setTimeout(() => navigate('/login'), 3000);
-    } catch (err) { setError(err.message || 'Failed to reset password.'); } finally { setLoading(false); }
+    } catch (err) {
+      const msg = getErrorMessage(err);
+      if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('invalid')) {
+        setError('Reset link has expired. Please request a new one.');
+      } else {
+        setError(msg || 'Failed to reset password.');
+      }
+    } finally { setLoading(false); }
   };
 
   const inp = { width: '100%', padding: '13px 44px 13px 44px', border: `1.5px solid ${T.border}`, borderRadius: '10px', fontSize: '15px', outline: 'none', background: T.bgSoft, fontFamily: 'inherit', boxSizing: 'border-box' };

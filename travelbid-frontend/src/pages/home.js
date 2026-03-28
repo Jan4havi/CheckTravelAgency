@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MdVerified, MdLock, MdFlashOn, MdChat, MdArrowForward, MdStar, MdCheck } from 'react-icons/md';
 import { FaPaperPlane, FaUsers, FaCompass } from 'react-icons/fa';
-import { HiOutlineGlobeAlt } from 'react-icons/hi';
 
 const T = {
   primary: '#e85d26', primaryLight: '#ff7d4d', primaryDark: '#c44a18',
@@ -123,9 +122,15 @@ export default function Home() {
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <button onClick={() => navigate('/login')}
               style={{ background: 'none', border: `1.5px solid ${T.border}`, color: T.textMid, fontSize: '14px', fontWeight: '600', cursor: 'pointer', padding: '8px 20px', borderRadius: '8px', transition: 'all 0.2s' }}
-              onMouseEnter={e => { e.target.style.borderColor = T.primary; e.target.style.color = T.primary; }}
-              onMouseLeave={e => { e.target.style.borderColor = T.border; e.target.style.color = T.textMid; }}>
-              Log in
+              onMouseEnter={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.color = T.primary; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMid; }}>
+              Traveler Login
+            </button>
+            <button onClick={() => navigate('/agency-login')}
+              style={{ background: 'none', border: `1.5px solid ${T.border}`, color: T.textMid, fontSize: '14px', fontWeight: '600', cursor: 'pointer', padding: '8px 20px', borderRadius: '8px', transition: 'all 0.2s' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.color = T.primary; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMid; }}>
+              Agency Login
             </button>
             <button className="btn-primary" onClick={() => navigate('/signup')}
               style={{ background: `linear-gradient(135deg, ${T.primary}, ${T.primaryLight})`, color: 'white', border: 'none', padding: '9px 22px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.3s', boxShadow: `0 4px 12px rgba(232,93,38,0.3)` }}>

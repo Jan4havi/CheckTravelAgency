@@ -1,235 +1,144 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { supabase } from '../services/supabase';
+/**
+ * src/context/AuthContext.js
+ * Auth context that wraps the entire app.
+ * Handles login, signup, logout, token refresh, and persisting user state.
+ */
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  authAPI, agenciesAPI, usersAPI,
+  setTokens, clearTokens, getAccessToken,
+  getErrorMessage,
+} from '../services/api';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
-};
+export function AuthProvider({ children }) {
+  const [user,    setUser]    = useState(null);
+  const [loading, setLoading] = useState(true);  // true while checking persisted session
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
+  // ── Restore session on mount ───────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) loadUserProfile(session.user);
-      else setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) loadUserProfile(session.user);
-      else { setUser(null); setLoading(false); }
-    });
-
-    return () => subscription.unsubscribe();
+    const restore = async () => {
+      const token = getAccessToken();
+      if (!token) { setLoading(false); return; }
+      try {
+        const { data } = await authAPI.me();
+        // Fetch full profile to get all fields (phone, bank, etc.)
+        const profile = await fetchFullProfile(data.user_type, data.id);
+        setUser({ ...data, ...profile });
+      } catch {
+        clearTokens();
+      } finally {
+        setLoading(false);
+      }
+    };
+    restore();
   }, []);
 
-  const loadUserProfile = async (authUser) => {
+  // ── Fetch full profile (traveler or agency) ───────────────────────────────
+  const fetchFullProfile = async (userType, _id) => {
     try {
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      if (profile) {
-        setUser({ id: authUser.id, email: authUser.email, ...profile, user_type: 'traveler' });
-        setLoading(false);
-        return;
-      }
-
-      const { data: agencyProfile } = await supabase
-        .from('agency_profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      if (agencyProfile) {
-        setUser({ id: authUser.id, email: authUser.email, ...agencyProfile, user_type: 'agency' });
-        setLoading(false);
-        return;
-      }
-
-      setUser({ id: authUser.id, email: authUser.email });
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading profile:', error);
-      setUser({ id: authUser.id, email: authUser.email });
-      setLoading(false);
+      const { data } = userType === 'agency'
+        ? await agenciesAPI.me()
+        : await usersAPI.me();
+      return data;
+    } catch {
+      return {};
     }
   };
 
-  // ── FRIENDLY ERROR MESSAGES ──
-  const getFriendlyError = (errorMessage) => {
-    const msg = errorMessage?.toLowerCase() || '';
-    if (msg.includes('user already registered') || msg.includes('already been registered') || msg.includes('duplicate') || msg.includes('already exists')) {
-      return 'ALREADY_REGISTERED';
-    }
-    if (msg.includes('email rate limit') || msg.includes('rate limit') || msg.includes('too many requests')) {
-      return 'RATE_LIMIT';
-    }
-    if (msg.includes('invalid login') || msg.includes('invalid credentials') || msg.includes('wrong password')) {
-      return 'INVALID_CREDENTIALS';
-    }
-    if (msg.includes('email not confirmed')) {
-      return 'EMAIL_NOT_CONFIRMED';
-    }
-    return errorMessage;
-  };
+  // ── Login ─────────────────────────────────────────────────────────────────
+  const login = useCallback(async (email, password, userType = null) => {
+    const { data: tokens } = userType === 'agency'
+      ? await authAPI.agencyLogin(email, password)
+      : await authAPI.login(email, password);
+    setTokens(tokens);
+    // Fetch full profile
+    const { data: me }      = await authAPI.me();
+    const profile           = await fetchFullProfile(me.user_type, me.id);
+    const fullUser          = {
+      ...me,
+      ...profile,
+      // normalize display name
+      display_name: me.user_type === 'agency' ? (profile.agency_name || me.display_name) : (profile.full_name || me.display_name),
+    };
+    setUser(fullUser);
+    return fullUser;
+  }, []);
 
-  // ── TRAVELER SIGNUP ──
-  const signup = async (userData) => {
-    const { full_name, email, phone, password } = userData;
+  // ── Signup — Traveler ─────────────────────────────────────────────────────
+  const signupTraveler = useCallback(async (payload) => {
+    const { data: tokens } = await authAPI.signupTraveler(payload);
+    setTokens(tokens);
+    const { data: me }  = await authAPI.me();
+    const profile       = await fetchFullProfile(me.user_type, me.id);
+    const fullUser      = { ...me, ...profile, display_name: profile.full_name || payload.full_name };
+    setUser(fullUser);
+    return fullUser;
+  }, []);
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+  // ── Signup — Agency ───────────────────────────────────────────────────────
+  const signupAgency = useCallback(async (payload) => {
+    const { data: tokens } = await authAPI.signupAgency(payload);
+    setTokens(tokens);
+    const { data: me }  = await authAPI.me();
+    const profile       = await fetchFullProfile(me.user_type, me.id);
+    const fullUser      = { ...me, ...profile, display_name: profile.agency_name || payload.agency_name };
+    setUser(fullUser);
+    return fullUser;
+  }, []);
 
-    if (error) {
-      console.error('Signup error:', error.message);
-      throw new Error(getFriendlyError(error.message));
-    }
-
-    // Supabase returns user even if already registered (with identities=[])
-    // This detects the "silent duplicate" case
-    if (data.user && data.user.identities && data.user.identities.length === 0) {
-      throw new Error('ALREADY_REGISTERED');
-    }
-
-    if (!data.user) throw new Error('Signup failed — please try again');
-
-    const { error: profileError } = await supabase
-      .from('user_profiles')
-      .insert({
-        id: data.user.id,
-        full_name: full_name,
-        phone: phone,
-        email: email,
-        user_type: 'traveler',
-        membership_plan: 'Free'
-      });
-
-    if (profileError) {
-      console.error('Profile insert error:', profileError.message);
-      // If profile already exists, still let them in
-      if (!profileError.message.includes('duplicate')) {
-        throw new Error(profileError.message);
-      }
-    }
-
-    setUser({
-      id: data.user.id,
-      email,
-      full_name,
-      phone,
-      user_type: 'traveler',
-      membership_plan: 'Free'
-    });
-
-    return data.user;
-  };
-
-  // ── AGENCY SIGNUP ──
-  const agencySignup = async (userData) => {
-    const { agency_name, email, phone, password, gst_number, pan_number, address, website } = userData;
-
-    const { data, error } = await supabase.auth.signUp({ email, password });
-
-    if (error) {
-      console.error('Agency signup error:', error.message);
-      throw new Error(getFriendlyError(error.message));
-    }
-
-    if (data.user && data.user.identities && data.user.identities.length === 0) {
-      throw new Error('ALREADY_REGISTERED');
-    }
-
-    if (!data.user) throw new Error('Signup failed — please try again');
-
-    const { error: profileError } = await supabase
-      .from('agency_profiles')
-      .insert({
-        id: data.user.id,
-        agency_name,
-        phone,
-        email,
-        gst_number: gst_number || null,
-        pan_number: pan_number || null,
-        address: address || null,
-        website: website || null,
-        user_type: 'agency'
-      });
-
-    if (profileError) {
-      console.error('Agency profile insert error:', profileError.message);
-      if (!profileError.message.includes('duplicate')) {
-        throw new Error(profileError.message);
-      }
-    }
-
-    setUser({
-      id: data.user.id,
-      email,
-      agency_name,
-      phone,
-      user_type: 'agency',
-      membership_plan: 'Free'
-    });
-
-    return data.user;
-  };
-
-  // ── LOGIN ──
-  const login = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      console.error('Login error:', error.message);
-      throw new Error(getFriendlyError(error.message));
-    }
-    await loadUserProfile(data.user);
-    return data.user;
-  };
-
-  // ── FORGOT PASSWORD — Send OTP to email ──
-  const sendPasswordResetOTP = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`
-    });
-    if (error) throw new Error(getFriendlyError(error.message));
-  };
-
-  // ── RESET PASSWORD with new password (after OTP verified) ──
-  const updatePassword = async (newPassword) => {
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) throw new Error(error.message);
-  };
-
-  // ── LOGOUT ──
-  const logout = async () => {
-    await supabase.auth.signOut();
+  // ── Logout ────────────────────────────────────────────────────────────────
+  const logout = useCallback(async () => {
+    try { await authAPI.logout(); } catch { /* ignore */ }
+    clearTokens();
     setUser(null);
-    window.location.href = '/';
-  };
+  }, []);
+
+  // ── Refresh user from backend ─────────────────────────────────────────────
+  const refreshUser = useCallback(async () => {
+    try {
+      const { data: me } = await authAPI.me();
+      const profile      = await fetchFullProfile(me.user_type, me.id);
+      setUser(prev => ({ ...prev, ...me, ...profile }));
+    } catch { /* ignore */ }
+  }, []);
 
   const value = {
     user,
-    setUser,
+    setUser,        // allows Profile.js etc. to update local user after save
     loading,
     login,
-    signup,
-    agencySignup,
+    signupTraveler,
+    signupAgency,
     logout,
-    sendPasswordResetOTP,
-    updatePassword,
+    refreshUser,
     isAuthenticated: !!user,
+    isAgency:   user?.user_type === 'agency',
     isTraveler: user?.user_type === 'traveler',
-    isAgency: user?.user_type === 'agency'
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+  // Show nothing until session is restored
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', fontFamily: "'DM Sans', system-ui, sans-serif", background: '#faf9f7' }}>
+        <div style={{ textAlign: 'center' }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e85d26" strokeWidth="2"
+            style={{ animation: 'spin 0.8s linear infinite', display: 'block', margin: '0 auto 16px' }}>
+            <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+          <p style={{ color: '#4a4a6a', fontSize: '14px' }}>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
+  return ctx;
 };

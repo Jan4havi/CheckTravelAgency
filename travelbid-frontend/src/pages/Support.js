@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../services/supabase';
+import { supportAPI, getErrorMessage } from '../services/api';
 import TopNav from './TopNav';
 import { MdSupportAgent, MdAdd, MdSend, MdClose } from 'react-icons/md';
 import { BsTicket } from 'react-icons/bs';
@@ -20,49 +20,74 @@ export default function Support() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [newTicket, setNewTicket] = useState({ subject: '', category: '', priority: 'medium', description: '' });
-  const isAgency = user?.user_type === 'agency';
 
   useEffect(() => { loadTickets(); }, []);
 
+  // ── Load tickets via GET /api/v1/support/ ────────────────────────────────
   const loadTickets = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('support_tickets').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-      if (error) throw error;
-      setTickets((data || []).map(t => ({ ...t, messages: t.messages ? JSON.parse(t.messages) : [] })));
+      const { data } = await supportAPI.list();
+      // Backend may return raw list or paginated — handle both
+      const list = Array.isArray(data) ? data : (data.results || []);
+      setTickets(list.map(t => ({ ...t, messages: t.messages ? (typeof t.messages === 'string' ? JSON.parse(t.messages) : t.messages) : [] })));
     } catch (e) { console.error(e); setTickets([]); } finally { setLoading(false); }
   };
 
+  // ── Create ticket via POST /api/v1/support/ ───────────────────────────────
   const handleCreateTicket = async () => {
     if (!newTicket.subject || !newTicket.category || !newTicket.description) { alert('Please fill all required fields'); return; }
     setSubmitting(true);
     try {
-      const firstMsg = [{ id: `msg_${Date.now()}`, sender: user?.full_name || user?.agency_name || 'User', isSupport: false, content: newTicket.description, timestamp: new Date().toISOString() }];
-      const { data, error } = await supabase.from('support_tickets').insert({ user_id: user.id, user_name: user?.full_name || user?.agency_name || 'User', user_email: user?.email || '', subject: newTicket.subject, category: newTicket.category, priority: newTicket.priority, message: newTicket.description, messages: JSON.stringify(firstMsg), status: 'open' }).select().single();
-      if (error) throw error;
-      setTickets([{ ...data, messages: firstMsg }, ...tickets]);
+      const firstMsg = [{
+        id: `msg_${Date.now()}`,
+        sender: user?.full_name || user?.display_name || 'User',
+        isSupport: false,
+        content: newTicket.description,
+        timestamp: new Date().toISOString(),
+      }];
+      const payload = {
+        user_id: user.id,
+        user_name: user?.full_name || user?.display_name || 'User',
+        user_email: user?.email || '',
+        subject: newTicket.subject,
+        message: newTicket.description,
+        // These extra fields are stored if the backend accepts them
+        category: newTicket.category,
+        priority: newTicket.priority,
+        messages: JSON.stringify(firstMsg),
+        status: 'open',
+      };
+      const { data } = await supportAPI.create(payload);
+      // Merge returned data with local firstMsg array
+      const created = data || {};
+      setTickets([{ ...created, messages: firstMsg }, ...tickets]);
       setNewTicket({ subject: '', category: '', priority: 'medium', description: '' });
       setShowModal(false);
-    } catch (e) { console.error(e); alert('Failed to create ticket.'); } finally { setSubmitting(false); }
+    } catch (e) { console.error(e); alert(getErrorMessage(e) || 'Failed to create ticket.'); } finally { setSubmitting(false); }
   };
 
+  // ── Reply is local-only for now (backend has no reply endpoint yet) ───────
   const handleSendReply = async () => {
     if (!newReply.trim() || !selectedTicket) return;
-    const msg = { id: `msg_${Date.now()}`, sender: user?.full_name || user?.agency_name || 'User', isSupport: false, content: newReply, timestamp: new Date().toISOString() };
+    const msg = {
+      id: `msg_${Date.now()}`,
+      sender: user?.full_name || user?.display_name || 'User',
+      isSupport: false,
+      content: newReply,
+      timestamp: new Date().toISOString(),
+    };
     const updated = [...(selectedTicket.messages || []), msg];
-    try {
-      const { error } = await supabase.from('support_tickets').update({ messages: JSON.stringify(updated), status: selectedTicket.status === 'closed' ? 'open' : selectedTicket.status, updated_at: new Date().toISOString() }).eq('id', selectedTicket.id);
-      if (error) throw error;
-      const t = { ...selectedTicket, messages: updated };
-      setTickets(tickets.map(x => x.id === selectedTicket.id ? t : x));
-      setSelectedTicket(t);
-      setNewReply('');
-      setTimeout(() => { const el = document.getElementById('ticket-msgs'); if (el) el.scrollTop = el.scrollHeight; }, 100);
-    } catch (e) { console.error(e); }
+    // Optimistic update — backend doesn't have a reply sub-endpoint yet
+    const t = { ...selectedTicket, messages: updated };
+    setTickets(tickets.map(x => x.id === selectedTicket.id ? t : x));
+    setSelectedTicket(t);
+    setNewReply('');
+    setTimeout(() => { const el = document.getElementById('ticket-msgs'); if (el) el.scrollTop = el.scrollHeight; }, 100);
   };
 
   const statusColor = s => ({ open: { bg: '#dcfce7', color: '#166534' }, closed: { bg: '#f3f4f6', color: '#374151' }, 'on-hold': { bg: '#fef3c7', color: '#92400e' } }[s] || { bg: '#e0f2fe', color: '#0891b2' });
-  const prioColor = p => ({ high: { bg: '#fee2e2', color: '#991b1b' }, medium: { bg: '#fef3c7', color: '#92400e' }, low: { bg: '#e0f2fe', color: '#0891b2' } }[p] || { bg: '#f3f4f6', color: '#374151' });
+  const prioColor   = p => ({ high: { bg: '#fee2e2', color: '#991b1b' }, medium: { bg: '#fef3c7', color: '#92400e' }, low: { bg: '#e0f2fe', color: '#0891b2' } }[p] || { bg: '#f3f4f6', color: '#374151' });
   const fmtTime = t => { const d = Date.now() - new Date(t).getTime(); if (d < 60000) return 'Just now'; if (d < 3600000) return `${Math.floor(d / 60000)}m ago`; if (d < 86400000) return `${Math.floor(d / 3600000)}h ago`; return `${Math.floor(d / 86400000)}d ago`; };
   const filtered = activeTab === 'all' ? tickets : tickets.filter(t => t.status === activeTab);
   const inp = { width: '100%', padding: '12px 16px', border: `1.5px solid ${T.border}`, borderRadius: '10px', fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', background: 'white' };
@@ -112,13 +137,13 @@ export default function Support() {
                       onMouseEnter={e => { if (selectedTicket?.id !== ticket.id) e.currentTarget.style.background = T.bg; }}
                       onMouseLeave={e => { if (selectedTicket?.id !== ticket.id) e.currentTarget.style.background = 'white'; }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '700', color: T.primary }}>#{ticket.id.slice(0, 8).toUpperCase()}</span>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: T.primary }}>#{(ticket.id || '').toString().slice(0, 8).toUpperCase()}</span>
                         <span style={{ fontSize: '11px', color: T.textLight }}>{fmtTime(ticket.created_at)}</span>
                       </div>
                       <p style={{ fontSize: '14px', fontWeight: '600', color: T.text, marginBottom: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ticket.subject}</p>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        <span style={{ ...sc, padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', textTransform: 'capitalize' }}>{ticket.status}</span>
-                        <span style={{ ...pc, padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', textTransform: 'capitalize' }}>{ticket.priority}</span>
+                        <span style={{ ...sc, padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', textTransform: 'capitalize' }}>{ticket.status || 'open'}</span>
+                        {ticket.priority && <span style={{ ...pc, padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', textTransform: 'capitalize' }}>{ticket.priority}</span>}
                         {ticket.category && <span style={{ background: '#f3f4f6', color: T.textMid, padding: '3px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', textTransform: 'capitalize' }}>{ticket.category}</span>}
                       </div>
                     </div>
@@ -133,9 +158,9 @@ export default function Support() {
               <>
                 <div style={{ padding: '20px 28px', borderBottom: `1px solid ${T.border}` }}>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: T.primary }}>#{selectedTicket.id.slice(0, 8).toUpperCase()}</span>
-                    <span style={{ ...statusColor(selectedTicket.status), padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', textTransform: 'capitalize' }}>{selectedTicket.status}</span>
-                    <span style={{ ...prioColor(selectedTicket.priority), padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', textTransform: 'capitalize' }}>{selectedTicket.priority} Priority</span>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: T.primary }}>#{(selectedTicket.id || '').toString().slice(0, 8).toUpperCase()}</span>
+                    <span style={{ ...statusColor(selectedTicket.status), padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', textTransform: 'capitalize' }}>{selectedTicket.status || 'open'}</span>
+                    {selectedTicket.priority && <span style={{ ...prioColor(selectedTicket.priority), padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', textTransform: 'capitalize' }}>{selectedTicket.priority} Priority</span>}
                   </div>
                   <h2 style={{ fontSize: '18px', fontWeight: '700', color: T.text, marginBottom: '4px' }}>{selectedTicket.subject}</h2>
                   <p style={{ fontSize: '12px', color: T.textLight }}>Created {fmtTime(selectedTicket.created_at)}</p>

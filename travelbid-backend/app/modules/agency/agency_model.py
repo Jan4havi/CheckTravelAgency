@@ -14,7 +14,7 @@ from sqlalchemy.sql import func
 class AgencyProfile(Base):
     __tablename__ = "agency_profiles"
 
-    id             = Column(UUID(as_uuid=True), primary_key=True)           # FK → auth.users.id
+    id             = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)           # FK → auth.users.id
     agency_name    = Column(Text,    nullable=True)
     phone          = Column(Text,    nullable=True)
     email          = Column(Text,    nullable=True)
@@ -30,6 +30,10 @@ class AgencyProfile(Base):
     account_holder = Column(Text,    nullable=True)
     bank_phone     = Column(Text,    nullable=True)
     created_at     = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    hashed_password = Column(Text, nullable=False) 
+    membership_plan = Column(String, default="Free")
+    is_active       = Column(Boolean, default=True)
 
     # Relationships
     bids           = relationship("Bid",          back_populates="agency",  cascade="all, delete-orphan")

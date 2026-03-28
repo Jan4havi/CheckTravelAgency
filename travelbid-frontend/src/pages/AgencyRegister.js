@@ -8,7 +8,7 @@ const T = { primary: '#e85d26', primaryLight: '#ff7d4d', accent: '#f5a623', text
 
 export default function AgencyRegister() {
   const navigate = useNavigate();
-  const { agencySignup } = useAuth();
+  const { signupAgency } = useAuth();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({ agency_name: '', email: '', phone: '', gst_number: '', pan_number: '', address: '', website: '', password: '', confirmPassword: '' });
@@ -43,7 +43,7 @@ export default function AgencyRegister() {
 
     setLoading(true);
     try {
-      await agencySignup(formData);
+      await signupAgency(formData);
       navigate('/dashboard');
     } catch (err) {
       if (err.message === 'ALREADY_REGISTERED') setErrors({ general: 'ALREADY_REGISTERED', email: 'Already registered' });
@@ -173,7 +173,7 @@ export default function AgencyRegister() {
           </form>
 
           <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: `1px solid ${T.border}`, textAlign: 'center' }}>
-            <p style={{ fontSize: '13px', color: T.textMid, marginBottom: '6px' }}>Already registered? <Link to="/login" style={{ color: T.primary, fontWeight: '700', textDecoration: 'none' }}>Sign in</Link></p>
+            <p style={{ fontSize: '13px', color: T.textMid, marginBottom: '6px' }}>Already registered? <Link to="/agency-login" style={{ color: T.primary, fontWeight: '700', textDecoration: 'none' }}>Sign in</Link></p>
             <p style={{ fontSize: '13px', color: T.textMid }}>Are you a traveler? <Link to="/signup" style={{ color: T.primary, fontWeight: '700', textDecoration: 'none' }}>Sign up here</Link></p>
           </div>
         </div>

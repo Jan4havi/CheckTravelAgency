@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../services/supabase';
+import { bidsAPI, getErrorMessage, getLeadPrice } from '../services/api';
 import TopNav from './TopNav';
-import { MdLocationOn, MdPeople, MdAccessTime, MdLockOpen, MdLock, MdArrowForward, MdBarChart, MdWhatshot, MdOutlineVerified } from 'react-icons/md';
+import { MdLocationOn, MdPeople, MdAccessTime, MdLockOpen, MdLock, MdArrowForward, MdBarChart, MdOutlineVerified } from 'react-icons/md';
 import { BiTrendingUp } from 'react-icons/bi';
 
 const T = { primary: '#e85d26', primaryLight: '#ff7d4d', accent: '#f5a623', text: '#1a1a2e', textMid: '#4a4a6a', textLight: '#8888aa', bg: '#faf9f7', border: '#ede9e3' };
@@ -26,7 +26,7 @@ const getDestImg = (d = '') => {
 
 export default function BidInsights() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  useAuth(); // auth enforced by ProtectedRoute
   const [activeTab, setActiveTab] = useState('active');
   const [bids, setBids] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,41 +34,63 @@ export default function BidInsights() {
 
   useEffect(() => { loadMyBids(); }, []);
 
+  // ── Load agency's own bids via GET /api/v1/bids/my ────────────────────────
   const loadMyBids = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('bids').select(`*, trip_requests (id, title, destination, travelers, start_date, end_date, trip_type, preferences, status, created_at, user_id)`).eq('agency_id', user.id).order('created_at', { ascending: false });
-      if (error) throw error;
-      setBids(data || []);
+      const { data } = await bidsAPI.myBids({ limit: 100 });
+      setBids(data.results || []);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
+  // ── Unlock bid via PATCH /api/v1/bids/{id}/unlock ─────────────────────────
+  // Called after Razorpay payment succeeds (or directly for now).
   const handleUnlock = async (bid) => {
     if (!window.confirm('Unlock this lead?\n\nYou will get access to the traveler\'s full contact details.')) return;
     setUnlockingId(bid.id);
     try {
-      const { error: updateError } = await supabase.from('bids').update({ is_unlocked: true }).eq('id', bid.id);
-      if (updateError) throw updateError;
-      const { data: tp } = await supabase.from('user_profiles').select('full_name, phone, email').eq('id', bid.trip_requests.user_id).single();
+      const { data: updatedBid } = await bidsAPI.unlock(bid.id);
+
+      // Persist unlocked lead info locally for the lead-details page
       const existing = JSON.parse(localStorage.getItem('unlocked_leads') || '[]');
       if (!existing.find(l => l.id === bid.id)) {
-        existing.push({ id: bid.id, tripId: bid.trip_id, tripTitle: bid.trip_requests?.title || 'Trip', destination: bid.trip_requests?.destination || '', travelers: bid.trip_requests?.travelers || '', travelDates: `${bid.trip_requests?.start_date} to ${bid.trip_requests?.end_date}`, preferences: bid.trip_requests?.preferences || '', bidAmount: bid.bid_amount, travelerName: tp?.full_name || 'Traveler', travelerEmail: tp?.email || 'Not provided', travelerPhone: tp?.phone || 'Not provided', unlockedAt: new Date().toISOString() });
+        const trip = bid.trip || {};
+        existing.push({
+          id: bid.id,
+          tripId: bid.trip_id,
+          tripTitle: trip.title || 'Trip',
+          destination: trip.destination || '',
+          travelers: trip.travelers || '',
+          travelDates: `${trip.start_date || ''} to ${trip.end_date || ''}`,
+          preferences: trip.preferences || '',
+          bidAmount: bid.bid_amount,
+          // Traveler contact details are provided by the backend after unlock
+          travelerName: updatedBid.traveler_name || 'Traveler',
+          travelerEmail: updatedBid.traveler_email || 'Not provided',
+          travelerPhone: updatedBid.traveler_phone || 'Not provided',
+          unlockedAt: new Date().toISOString(),
+        });
         localStorage.setItem('unlocked_leads', JSON.stringify(existing));
       }
+
       setBids(prev => prev.map(b => b.id === bid.id ? { ...b, is_unlocked: true } : b));
       alert('Lead unlocked!');
       navigate('/my-lead-details');
-    } catch (e) { console.error(e); alert('Failed to unlock lead.'); } finally { setUnlockingId(null); }
+    } catch (e) {
+      console.error(e);
+      alert(getErrorMessage(e) || 'Failed to unlock lead.');
+    } finally { setUnlockingId(null); }
   };
 
   const tabs = [
-    { key: 'active', label: 'Active Bids', count: bids.filter(b => !b.is_unlocked && b.trip_requests?.status === 'Live').length },
-    { key: 'unlocked', label: 'Unlocked', count: bids.filter(b => b.is_unlocked).length },
-    { key: 'all', label: 'All Bids', count: bids.length },
+    { key: 'active',   label: 'Active Bids',  count: bids.filter(b => !b.is_unlocked && b.trip?.status === 'Live').length },
+    { key: 'unlocked', label: 'Unlocked',      count: bids.filter(b => b.is_unlocked).length },
+    { key: 'all',      label: 'All Bids',      count: bids.length },
   ];
 
-  const filtered = activeTab === 'active' ? bids.filter(b => !b.is_unlocked && b.trip_requests?.status === 'Live')
-    : activeTab === 'unlocked' ? bids.filter(b => b.is_unlocked) : bids;
+  const filtered = activeTab === 'active'   ? bids.filter(b => !b.is_unlocked && b.trip?.status === 'Live')
+                 : activeTab === 'unlocked' ? bids.filter(b => b.is_unlocked)
+                 : bids;
 
   const getPostedAgo = (d) => {
     const diff = Date.now() - new Date(d).getTime();
@@ -77,14 +99,14 @@ export default function BidInsights() {
     return `${Math.floor(diff / 86400000)}d ago`;
   };
 
-  const usedBids = bids.length;
+  const usedBids     = bids.length;
   const unlockedLeads = bids.filter(b => b.is_unlocked).length;
-  const lockedLeads = bids.filter(b => !b.is_unlocked).length;
+  const lockedLeads  = bids.filter(b => !b.is_unlocked).length;
 
   const stats = [
-    { label: 'Used Bids', value: usedBids, icon: <MdBarChart size={24} />, color: T.primary, bg: `${T.primary}12`, sub: 'Total bids submitted' },
-    { label: 'Unlocked Leads', value: unlockedLeads, icon: <MdLockOpen size={24} />, color: '#10b981', bg: '#dcfce7', sub: 'Contact details revealed' },
-    { label: 'Locked Leads', value: lockedLeads, icon: <MdLock size={24} />, color: T.accent, bg: `${T.accent}20`, sub: 'Pending unlock' },
+    { label: 'Used Bids',       value: usedBids,     icon: <MdBarChart size={24} />, color: T.primary, bg: `${T.primary}12`, sub: 'Total bids submitted' },
+    { label: 'Unlocked Leads',  value: unlockedLeads, icon: <MdLockOpen size={24} />, color: '#10b981', bg: '#dcfce7',        sub: 'Contact details revealed' },
+    { label: 'Locked Leads',    value: lockedLeads,  icon: <MdLock size={24} />,     color: T.accent,  bg: `${T.accent}20`,  sub: 'Pending unlock' },
   ];
 
   return (
@@ -137,16 +159,17 @@ export default function BidInsights() {
         ) : (
           <div style={{ display: 'grid', gap: '20px' }}>
             {filtered.map(bid => {
-              const trip = bid.trip_requests;
+              // Backend returns trip data inline in bid response
+              const trip = bid.trip || {};
               return (
                 <div key={bid.id} className="bid-card"
                   style={{ background: 'white', borderRadius: '20px', border: bid.is_unlocked ? `2px solid #10b981` : `1px solid ${T.border}`, overflow: 'hidden', transition: 'all 0.3s', display: 'grid', gridTemplateColumns: '180px 1fr', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                   <div style={{ position: 'relative', overflow: 'hidden' }}>
-                    <img src={getDestImg(trip?.destination)} alt={trip?.destination} style={{ width: '100%', height: '100%', objectFit: 'cover', minHeight: '160px' }} />
+                    <img src={getDestImg(trip.destination)} alt={trip.destination} style={{ width: '100%', height: '100%', objectFit: 'cover', minHeight: '160px' }} />
                     <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.4), transparent)' }} />
                     <div style={{ position: 'absolute', bottom: '12px', left: '10px' }}>
                       <div style={{ background: 'rgba(255,255,255,0.95)', color: T.text, padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        <MdLocationOn size={12} color={T.primary} /> {trip?.destination}
+                        <MdLocationOn size={12} color={T.primary} /> {trip.destination || 'N/A'}
                       </div>
                     </div>
                   </div>
@@ -154,14 +177,14 @@ export default function BidInsights() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                          <h3 onClick={() => navigate(`/trip/${bid.trip_id}`)} style={{ fontSize: '17px', fontWeight: '700', color: T.primary, cursor: 'pointer', margin: 0 }}>{trip?.title || 'Trip'}</h3>
+                          <h3 onClick={() => navigate(`/trip/${bid.trip_id}`)} style={{ fontSize: '17px', fontWeight: '700', color: T.primary, cursor: 'pointer', margin: 0 }}>{trip.title || 'Trip'}</h3>
                           {bid.is_unlocked
                             ? <span style={{ background: '#dcfce7', color: '#166534', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '3px' }}><MdOutlineVerified size={12} /> Unlocked</span>
-                            : trip?.status === 'Live' && <span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>Active</span>
+                            : trip.status === 'Live' && <span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>Active</span>
                           }
                         </div>
                         <div style={{ display: 'flex', gap: '14px', fontSize: '13px', color: T.textMid, flexWrap: 'wrap' }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><MdPeople size={13} color={T.textLight} /> {trip?.travelers} people</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><MdPeople size={13} color={T.textLight} /> {trip.travelers} people</span>
                           <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><MdAccessTime size={13} color={T.textLight} /> {getPostedAgo(bid.created_at)}</span>
                         </div>
                       </div>
@@ -180,10 +203,17 @@ export default function BidInsights() {
                           View Lead Details <MdArrowForward size={15} />
                         </button>
                       ) : (
-                        <button onClick={() => handleUnlock(bid)} disabled={unlockingId === bid.id}
-                          style={{ padding: '10px 22px', background: unlockingId === bid.id ? '#ccc' : `linear-gradient(135deg, ${T.accent}, #e8a800)`, color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: unlockingId === bid.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: `0 4px 12px rgba(245,166,35,0.3)` }}>
-                          <MdLockOpen size={16} /> {unlockingId === bid.id ? 'Unlocking...' : 'Unlock Lead'}
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: T.textLight }}>
+                            <span style={{ background: `${T.accent}20`, color: '#92400e', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', fontSize: '11px' }}>
+                              {getLeadPrice(bid.bid_amount).tier} Lead — {getLeadPrice(bid.bid_amount).label}
+                            </span>
+                          </div>
+                          <button onClick={() => handleUnlock(bid)} disabled={unlockingId === bid.id}
+                            style={{ padding: '10px 22px', background: unlockingId === bid.id ? '#ccc' : `linear-gradient(135deg, ${T.accent}, #e8a800)`, color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: unlockingId === bid.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: `0 4px 12px rgba(245,166,35,0.3)` }}>
+                            <MdLockOpen size={16} /> {unlockingId === bid.id ? 'Unlocking...' : `Unlock for ${getLeadPrice(bid.bid_amount).label}`}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

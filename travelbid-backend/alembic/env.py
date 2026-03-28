@@ -11,6 +11,15 @@ from alembic import context
 # Import your models so Alembic can detect schema changes
 from app.base import Base  # noqa: F401  — registers all tables
 
+# 🔥 ADD THESE IMPORTS
+from app.modules.user.user_model import UserProfile
+from app.modules.agency.agency_model import AgencyProfile
+from app.modules.trip.trip_request_model import TripRequest
+from app.modules.bid.bid_model import Bid
+from app.modules.conversation.conversation_model import Conversation
+from app.modules.message.message_model import Message
+from app.modules.support.support_model import SupportTicket
+
 config = context.config
 
 # Allow DATABASE_URL env var to override alembic.ini

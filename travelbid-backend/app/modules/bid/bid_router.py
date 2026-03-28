@@ -20,6 +20,7 @@ Traveler only:
 Admin / internal:
   GET    /bids                     — list all bids with full filters + pagination
 """
+
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
@@ -45,11 +46,16 @@ from app.modules.bid.bid_schema import (
     PaginatedBidResponse,
 )
 from app.modules.bid import bid_service
+from app.core.rbac_dep import require_user_types
 
-bid_router = APIRouter(prefix="/bids", tags=["Bids"])
+bid_router = APIRouter(
+    prefix="/bids",
+    tags=["Bids"],
+)
 
 
 # ─── PUBLIC — Stats ───────────────────────────────────────────────────────────
+
 
 @bid_router.get(
     "/stats/{trip_id}",
@@ -62,7 +68,14 @@ def get_bid_stats(trip_id: UUID, db: Session = Depends(get_db)):
 
 # ─── AGENCY — Place a bid ─────────────────────────────────────────────────────
 
-@bid_router.post("", response_model=BidResponse, status_code=201, summary="Place a bid on a trip")
+
+@bid_router.post(
+    "",
+    response_model=BidResponse,
+    status_code=201,
+    summary="Place a bid on a trip",
+    dependencies=[Depends(require_user_types(["agency"]))],
+)
 def create_bid(
     payload: BidCreate,
     current_agency: AgencyProfile = Depends(get_current_agency),
@@ -78,7 +91,13 @@ def create_bid(
 
 # ─── AGENCY — Edit own bid ────────────────────────────────────────────────────
 
-@bid_router.patch("/{bid_id}", response_model=BidResponse, summary="Edit your bid (amount + message)")
+
+@bid_router.patch(
+    "/{bid_id}",
+    response_model=BidResponse,
+    summary="Edit your bid (amount + message)",
+    dependencies=[Depends(require_user_types(["agency"]))],
+)
 def update_bid(
     bid_id: UUID,
     payload: BidUpdate,
@@ -90,7 +109,12 @@ def update_bid(
 
 # ─── AGENCY — Withdraw bid ────────────────────────────────────────────────────
 
-@bid_router.delete("/{bid_id}", summary="Withdraw your bid")
+
+@bid_router.delete(
+    "/{bid_id}",
+    summary="Withdraw your bid",
+    dependencies=[Depends(require_user_types(["agency"]))],
+)
 def delete_bid(
     bid_id: UUID,
     current_agency: AgencyProfile = Depends(get_current_agency),
@@ -101,25 +125,31 @@ def delete_bid(
 
 # ─── AGENCY — My bids (all trips I bid on) ────────────────────────────────────
 
-@bid_router.get("/my", response_model=PaginatedBidResponse, summary="All bids placed by this agency")
+
+@bid_router.get(
+    "/my",
+    response_model=PaginatedBidResponse,
+    summary="All bids placed by this agency",
+    dependencies=[Depends(require_user_types(["agency"]))],
+)
 def my_bids(
-    keyword:        Optional[str]      = Query(None, description="Search message content"),
-    trip_id:        Optional[UUID]     = Query(None),
-    is_unlocked:    Optional[bool]     = Query(None),
-    chat_requested: Optional[bool]     = Query(None),
-    viewed:         Optional[bool]     = Query(None),
-    created_from:   Optional[datetime] = Query(None),
-    created_to:     Optional[datetime] = Query(None),
-    page:           int                = Query(1,  ge=1),
-    limit:          int                = Query(20, ge=1, le=100),
-    current_agency: AgencyProfile      = Depends(get_current_agency),
-    db:             Session            = Depends(get_db),
+    keyword: Optional[str] = Query(None, description="Search message content"),
+    trip_id: Optional[UUID] = Query(None),
+    is_unlocked: Optional[bool] = Query(None),
+    chat_requested: Optional[bool] = Query(None),
+    viewed: Optional[bool] = Query(None),
+    created_from: Optional[datetime] = Query(None),
+    created_to: Optional[datetime] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    current_agency: AgencyProfile = Depends(get_current_agency),
+    db: Session = Depends(get_db),
 ):
     """Returns all bids placed by the authenticated agency with optional filters."""
     filters = BidFilters(
         keyword=keyword,
         trip_id=trip_id,
-        agency_id=current_agency.id,          # always scoped to this agency
+        agency_id=current_agency.id,  # always scoped to this agency
         is_unlocked=is_unlocked,
         chat_requested=chat_requested,
         viewed=viewed,
@@ -133,10 +163,12 @@ def my_bids(
 
 # ─── AGENCY — My bid on a specific trip ──────────────────────────────────────
 
+
 @bid_router.get(
     "/my/trip/{trip_id}",
     response_model=BidResponse,
     summary="Get this agency's own bid on a specific trip",
+    dependencies=[Depends(require_user_types(["agency"]))],
 )
 def my_bid_for_trip(
     trip_id: UUID,
@@ -148,10 +180,12 @@ def my_bid_for_trip(
 
 # ─── TRAVELER — All bids on their trip (full details) ────────────────────────
 
+
 @bid_router.get(
     "/trip/{trip_id}",
     response_model=PaginatedBidResponse,
     summary="All bids on traveler's trip (traveler only — full amounts + messages)",
+    dependencies=[Depends(require_user_types(["traveler"]))],
 )
 def bids_for_trip(
     trip_id: UUID,
@@ -167,10 +201,12 @@ def bids_for_trip(
 
 # ─── TRAVELER — Mark bid as viewed ───────────────────────────────────────────
 
+
 @bid_router.patch(
     "/{bid_id}/viewed",
     response_model=BidResponse,
     summary="Mark a bid as viewed (traveler opens it)",
+    dependencies=[Depends(require_user_types(["traveler"]))],
 )
 def mark_bid_viewed(
     bid_id: UUID,
@@ -182,10 +218,12 @@ def mark_bid_viewed(
 
 # ─── TRAVELER — Unlock bid (post payment) ────────────────────────────────────
 
+
 @bid_router.patch(
     "/{bid_id}/unlock",
     response_model=BidResponse,
     summary="Unlock a bid after payment — reveals agency contact details",
+    dependencies=[Depends(require_user_types(["traveler"]))],
 )
 def unlock_bid(
     bid_id: UUID,
@@ -201,21 +239,27 @@ def unlock_bid(
 
 # ─── ADMIN / INTERNAL — Full list with all filters ───────────────────────────
 
-@bid_router.get("", response_model=PaginatedBidResponse, summary="List all bids (admin/internal)")
+
+@bid_router.get(
+    "",
+    response_model=PaginatedBidResponse,
+    summary="List all bids (admin/internal)",
+    dependencies=[Depends(require_user_types(["admin"]))],
+)
 def list_all_bids(
-    keyword:        Optional[str]      = Query(None, description="Search agency_name or message"),
-    trip_id:        Optional[UUID]     = Query(None),
-    agency_id:      Optional[UUID]     = Query(None),
-    is_unlocked:    Optional[bool]     = Query(None),
-    chat_requested: Optional[bool]     = Query(None),
-    viewed:         Optional[bool]     = Query(None),
-    created_from:   Optional[datetime] = Query(None),
-    created_to:     Optional[datetime] = Query(None),
-    page:           int                = Query(1,  ge=1),
-    limit:          int                = Query(20, ge=1, le=100),
+    keyword: Optional[str] = Query(None, description="Search agency_name or message"),
+    trip_id: Optional[UUID] = Query(None),
+    agency_id: Optional[UUID] = Query(None),
+    is_unlocked: Optional[bool] = Query(None),
+    chat_requested: Optional[bool] = Query(None),
+    viewed: Optional[bool] = Query(None),
+    created_from: Optional[datetime] = Query(None),
+    created_to: Optional[datetime] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     # protect this in production — add admin dependency
     _: CurrentUser = Depends(get_current_user),
-    db: Session    = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     filters = BidFilters(
         keyword=keyword,

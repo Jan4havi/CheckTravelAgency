@@ -11,6 +11,7 @@ GET  /auth/me
 POST /auth/forgot-password
 POST /auth/reset-password
 """
+
 import secrets
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -41,6 +42,7 @@ from app.core.security import (
 from app.modules.agency.agency_model import AgencyProfile
 from app.modules.user.user_model import UserProfile
 from jose import JWTError
+from fastapi import Query
 
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -51,16 +53,17 @@ _reset_tokens: dict[str, dict] = {}
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
+
 def _email_taken(db: Session, email: str) -> bool:
     traveler = db.query(UserProfile).filter(UserProfile.email == email).first()
-    agency   = db.query(AgencyProfile).filter(AgencyProfile.email == email).first()
+    agency = db.query(AgencyProfile).filter(AgencyProfile.email == email).first()
     return bool(traveler or agency)
 
 
 def _build_token_response(user: UserProfile | AgencyProfile) -> TokenResponse:
     is_agency = isinstance(user, AgencyProfile)
-    display   = user.agency_name if is_agency else user.full_name
-    utype     = "agency" if is_agency else "traveler"
+    display = user.agency_name if is_agency else user.full_name
+    utype = "agency" if is_agency else "traveler"
     return TokenResponse(
         access_token=create_access_token(user.id, utype),
         refresh_token=create_refresh_token(user.id, utype),
@@ -71,6 +74,7 @@ def _build_token_response(user: UserProfile | AgencyProfile) -> TokenResponse:
 
 
 # ─── Signup — Traveler ────────────────────────────────────────────────────────
+
 
 @auth_router.post("/signup/traveler", response_model=TokenResponse, status_code=201)
 def signup_traveler(payload: TravelerSignupRequest, db: Session = Depends(get_db)):
@@ -95,6 +99,7 @@ def signup_traveler(payload: TravelerSignupRequest, db: Session = Depends(get_db
 
 
 # ─── Signup — Agency ─────────────────────────────────────────────────────────
+
 
 @auth_router.post("/signup/agency", response_model=TokenResponse, status_code=201)
 def signup_agency(payload: AgencySignupRequest, db: Session = Depends(get_db)):
@@ -124,14 +129,45 @@ def signup_agency(payload: AgencySignupRequest, db: Session = Depends(get_db)):
 
 # ─── Login ────────────────────────────────────────────────────────────────────
 
+
 @auth_router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(
+    payload: LoginRequest,
+    db: Session = Depends(get_db),
+    user_type: str | None = Query(default=None),
+):
+    email = payload.email.lower()
+
+    if user_type == "agency":
+        return agency_login(payload, db)
+
+    # Check traveler first, then agency
+    user: UserProfile | None = (
+        db.query(UserProfile).filter(UserProfile.email == email).first()
+    )
+
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated",
+        )
+
+    return _build_token_response(user)
+
+
+@auth_router.post("/agency/login", response_model=TokenResponse)
+def agency_login(payload: LoginRequest, db: Session = Depends(get_db)):
     email = payload.email.lower()
 
     # Check traveler first, then agency
-    user: UserProfile | AgencyProfile | None = (
-        db.query(UserProfile).filter(UserProfile.email == email).first()
-        or db.query(AgencyProfile).filter(AgencyProfile.email == email).first()
+    user: AgencyProfile | None = (
+        db.query(AgencyProfile).filter(AgencyProfile.email == email).first()
     )
 
     if not user or not verify_password(payload.password, user.hashed_password):
@@ -151,6 +187,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 # ─── Refresh Token ────────────────────────────────────────────────────────────
 
+
 @auth_router.post("/refresh", response_model=TokenResponse)
 def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
     try:
@@ -167,7 +204,7 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
             detail="Not a refresh token",
         )
 
-    user_id   = UUID(data["sub"])
+    user_id = UUID(data["sub"])
     user_type = data["user_type"]
 
     if user_type == "agency":
@@ -176,12 +213,15 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
         user = db.query(UserProfile).filter(UserProfile.id == user_id).first()
 
     if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+        )
 
     return _build_token_response(user)
 
 
 # ─── Logout (client-side only — invalidate on frontend) ──────────────────────
+
 
 @auth_router.post("/logout", response_model=MessageResponse)
 def logout(_: CurrentUser = Depends(get_current_user)):
@@ -193,6 +233,7 @@ def logout(_: CurrentUser = Depends(get_current_user)):
 
 
 # ─── Get Current User ─────────────────────────────────────────────────────────
+
 
 @auth_router.get("/me", response_model=UserMeResponse)
 def get_me(current_user: CurrentUser = Depends(get_current_user)):
@@ -209,6 +250,7 @@ def get_me(current_user: CurrentUser = Depends(get_current_user)):
 
 # ─── Forgot Password ──────────────────────────────────────────────────────────
 
+
 @auth_router.post("/forgot-password", response_model=MessageResponse)
 def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
     email = payload.email.lower()
@@ -221,13 +263,13 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     if not user:
         return {"message": "If that email exists, a reset link has been sent."}
 
-    token  = secrets.token_urlsafe(32)
+    token = secrets.token_urlsafe(32)
     expiry = datetime.utcnow() + timedelta(hours=1)
 
     _reset_tokens[token] = {
-        "user_id":   str(user.id),
+        "user_id": str(user.id),
         "user_type": user.user_type,
-        "expires":   expiry,
+        "expires": expiry,
     }
 
     # TODO: Send email with reset link:
@@ -240,6 +282,7 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
 
 # ─── Reset Password ───────────────────────────────────────────────────────────
 
+
 @auth_router.post("/reset-password", response_model=MessageResponse)
 def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
     record = _reset_tokens.get(payload.token)
@@ -251,7 +294,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         _reset_tokens.pop(payload.token, None)
         raise HTTPException(status_code=400, detail="Reset token has expired")
 
-    user_id   = UUID(record["user_id"])
+    user_id = UUID(record["user_id"])
     user_type = record["user_type"]
 
     if user_type == "agency":
@@ -265,6 +308,6 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     user.hashed_password = hash_password(payload.new_password)
     db.commit()
 
-    _reset_tokens.pop(payload.token, None)   # single-use token
+    _reset_tokens.pop(payload.token, None)  # single-use token
 
     return {"message": "Password updated successfully. Please log in again."}

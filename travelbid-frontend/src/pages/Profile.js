@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../services/supabase';
+import { usersAPI, getErrorMessage } from '../services/api';
 import TopNav from './TopNav';
 import { MdPerson, MdEmail, MdPhone, MdBusiness, MdCreditCard, MdAccountBalance, MdEdit, MdCheck, MdClose, MdUploadFile, MdInfo } from 'react-icons/md';
 
@@ -43,28 +43,43 @@ export default function Profile() {
     });
   }, [user]);
 
+  // ── Save via PUT /api/v1/users/{id} ──────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
     try {
-      if (isAgency) {
-        const d = {
-          phone: form.phone, gst_number: form.gst_number, pan_number: form.pan_number,
-          address: form.address, website: form.website, bank_name: form.bankName,
-          account_number: form.accountNumber, ifsc_code: form.ifscCode,
-          account_holder: form.accountHolder, bank_phone: form.bankPhone,
-        };
-        const { error } = await supabase.from('agency_profiles').update(d).eq('id', user.id);
-        if (error) throw error;
-        setUser({ ...user, ...d });
-      } else {
-        const d = { phone: form.phone, email: form.email };
-        const { error } = await supabase.from('user_profiles').update(d).eq('id', user.id);
-        if (error) throw error;
-        setUser({ ...user, ...d });
-      }
+      const payload = isAgency
+        ? {
+            full_name: user.agency_name || user.full_name || '',
+            phone: form.phone,
+            email: user.email || '',
+            membership_plan: user.membership_plan || 'Free',
+            // extended agency fields — backend should accept these
+            gst_number: form.gst_number,
+            pan_number: form.pan_number,
+            address: form.address,
+            website: form.website,
+            bank_name: form.bankName,
+            account_number: form.accountNumber,
+            ifsc_code: form.ifscCode,
+            account_holder: form.accountHolder,
+            bank_phone: form.bankPhone,
+          }
+        : {
+            full_name: user.full_name || '',
+            phone: form.phone,
+            email: form.email,
+            membership_plan: user.membership_plan || 'Free',
+          };
+
+      const { data } = await usersAPI.update(user.id, payload);
+      // Merge updated fields back into auth context
+      setUser({ ...user, ...data, phone: form.phone, email: form.email });
       alert('Profile updated successfully!');
       setIsEditing(false);
-    } catch (e) { console.error(e); alert('Failed to save profile.'); } finally { setSaving(false); }
+    } catch (e) {
+      console.error(e);
+      alert(getErrorMessage(e) || 'Failed to save profile.');
+    } finally { setSaving(false); }
   };
 
   const inp = (editable = isEditing) => ({
@@ -92,7 +107,6 @@ export default function Profile() {
       <TopNav activePage="Profile" />
       <div style={{ maxWidth: '900px', margin: '0 auto', padding: '36px 32px', animation: 'fadeUp 0.5s ease' }}>
 
-        {/* Page header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
           <div>
             <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '32px', fontWeight: '800', color: T.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -120,8 +134,6 @@ export default function Profile() {
         </div>
 
         <div style={{ background: 'white', borderRadius: '20px', border: `1px solid ${T.border}`, overflow: 'hidden', boxShadow: '0 2px 16px rgba(0,0,0,0.05)' }}>
-
-          {/* Gradient header strip */}
           <div style={{ background: `linear-gradient(135deg, ${T.primary}, ${T.primaryLight})`, padding: '28px 40px', display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div style={{ width: '68px', height: '68px', background: 'rgba(255,255,255,0.25)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', fontWeight: '800', color: 'white', border: '3px solid rgba(255,255,255,0.4)', flexShrink: 0 }}>
               {isAgency ? user?.agency_name?.charAt(0) : user?.full_name?.charAt(0) || 'U'}
@@ -221,7 +233,6 @@ export default function Profile() {
             {/* ── AGENCY SECTIONS ── */}
             {isAgency && (
               <>
-                {/* Business Details */}
                 <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: '32px', marginBottom: '32px' }}>
                   <SectionHeader icon={<MdBusiness size={18} />} title="Business Details" />
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
@@ -259,13 +270,12 @@ export default function Profile() {
                   </div>
                 </div>
 
-                {/* PAN Card Upload */}
                 <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: '32px', marginBottom: '32px' }}>
                   <SectionHeader icon={<MdCreditCard size={18} />} title="PAN Card Copy" />
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                     {[
                       { label: 'Front Side', img: panFront, onChange: e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setPanFront(r.result); r.readAsDataURL(f); } }, onRemove: () => setPanFront(null) },
-                      { label: 'Back Side', img: panBack, onChange: e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setPanBack(r.result); r.readAsDataURL(f); } }, onRemove: () => setPanBack(null) },
+                      { label: 'Back Side',  img: panBack,  onChange: e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setPanBack(r.result);  r.readAsDataURL(f); } }, onRemove: () => setPanBack(null) },
                     ].map(({ label, img, onChange, onRemove }) => (
                       <div key={label}>
                         <p style={{ fontSize: '12px', fontWeight: '700', color: T.textMid, marginBottom: '8px', textTransform: 'uppercase' }}>{label}</p>
@@ -279,9 +289,7 @@ export default function Profile() {
                             )}
                           </div>
                         ) : (
-                          <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '180px', border: `2px dashed ${T.border}`, borderRadius: '12px', cursor: isEditing ? 'pointer' : 'not-allowed', background: isEditing ? 'white' : T.bg }}
-                            onMouseEnter={e => { if (isEditing) { e.currentTarget.style.borderColor = T.primary; e.currentTarget.style.background = `${T.primary}05`; } }}
-                            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = isEditing ? 'white' : T.bg; }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '180px', border: `2px dashed ${T.border}`, borderRadius: '12px', cursor: isEditing ? 'pointer' : 'not-allowed', background: isEditing ? 'white' : T.bg }}>
                             <MdUploadFile size={36} color={T.textLight} />
                             <p style={{ marginTop: '10px', fontSize: '13px', color: T.textLight, fontWeight: '600' }}>{isEditing ? 'Click to upload' : 'No image'}</p>
                             <input type="file" accept="image/*" onChange={onChange} disabled={!isEditing} style={{ display: 'none' }} />
@@ -292,24 +300,19 @@ export default function Profile() {
                   </div>
                 </div>
 
-                {/* Bank Account Details — REQUIRED */}
                 <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: '32px' }}>
                   <SectionHeader icon={<MdAccountBalance size={18} />} title="Bank Account Details" required />
-
                   <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <MdInfo size={18} color="#d97706" style={{ flexShrink: 0 }} />
-                    <p style={{ fontSize: '13px', color: '#92400e', margin: 0, fontWeight: '600' }}>
-                      Bank details are required for verification.
-                    </p>
+                    <p style={{ fontSize: '13px', color: '#92400e', margin: 0, fontWeight: '600' }}>Bank details are required for verification.</p>
                   </div>
-
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                     {[
-                      { key: 'bankName', label: 'Bank Name *', ph: 'State Bank of India' },
-                      { key: 'accountHolder', label: 'Account Holder Name *', ph: 'Name as per bank' },
-                      { key: 'accountNumber', label: 'Account Number *', ph: 'XXXXXXXXXXXX' },
-                      { key: 'ifscCode', label: 'IFSC Code *', ph: 'SBIN0001234', upper: true },
-                      { key: 'bankPhone', label: 'Bank Linked Phone *', ph: '9876543210', numeric: true },
+                      { key: 'bankName',      label: 'Bank Name *',            ph: 'State Bank of India' },
+                      { key: 'accountHolder', label: 'Account Holder Name *',  ph: 'Name as per bank' },
+                      { key: 'accountNumber', label: 'Account Number *',        ph: 'XXXXXXXXXXXX' },
+                      { key: 'ifscCode',      label: 'IFSC Code *',             ph: 'SBIN0001234', upper: true },
+                      { key: 'bankPhone',     label: 'Bank Linked Phone *',     ph: '9876543210', numeric: true },
                     ].map(({ key, label, ph, upper, numeric }) => (
                       <div key={key}>
                         <label style={lbl}>{label}</label>

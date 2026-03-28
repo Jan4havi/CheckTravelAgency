@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.security import decode_token
 from app.modules.agency.agency_model import AgencyProfile
 from app.modules.user.user_model import UserProfile
+from fastapi import Depends, Request
 
 bearer_scheme = HTTPBearer()
 
@@ -22,37 +23,27 @@ CurrentUser = Union[UserProfile, AgencyProfile]
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    request: Request,
     db: Session = Depends(get_db),
 ) -> CurrentUser:
     """
     Validates Bearer JWT and returns the UserProfile or AgencyProfile.
     Raises 401 on any auth failure.
     """
+
+    user_id: str = request.state.user_id
+    user_type: str = request.state.user_type
+
+    if user_type == "agency":
+        user = db.query(AgencyProfile).filter(AgencyProfile.id == user_id).first()
+    else:
+        user = db.query(UserProfile).filter(UserProfile.id == user_id).first()
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-    try:
-        payload = decode_token(credentials.credentials)
-    except JWTError:
-        raise credentials_exception
-
-    user_id: str = payload.get("sub")
-    user_type: str = payload.get("user_type")
-    token_type: str = payload.get("type")
-
-    if not user_id or token_type != "access":
-        raise credentials_exception
-
-    uid = UUID(user_id)
-
-    if user_type == "agency":
-        user = db.query(AgencyProfile).filter(AgencyProfile.id == uid).first()
-    else:
-        user = db.query(UserProfile).filter(UserProfile.id == uid).first()
 
     if user is None or not user.is_active:
         raise credentials_exception

@@ -10,7 +10,7 @@ const T = {
   border: '#ede9e3', bgSoft: '#faf9f7',
 };
 
-export default function Login() {
+export default function TravelerLogin() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -25,20 +25,35 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.email || !formData.password) { setErrors({ general: 'Please enter your email and password' }); return; }
+    if (!formData.email || !formData.password) { 
+      setErrors({ general: 'Please enter your email and password' }); 
+      return; 
+    }
     setLoading(true);
     try {
-      await login(formData.email, formData.password);
+      const user = await login(formData.email, formData.password);
+      // Check if user is traveler
+      if (user.user_type !== 'traveler') {
+        setErrors({ general: 'This is a traveler login. Please use agency login.' });
+        setLoading(false);
+        return;
+      }
       navigate('/dashboard');
     } catch (err) {
       const msg = err.message?.toLowerCase();
       if (msg.includes('invalid') || msg.includes('credentials')) setErrors({ general: 'INVALID_CREDENTIALS' });
       else if (msg.includes('rate limit') || msg.includes('too many')) setErrors({ general: 'RATE_LIMIT' });
       else setErrors({ general: err.message || 'Login failed. Please try again.' });
-    } finally { setLoading(false); }
+    } finally { 
+      setLoading(false); 
+    }
   };
 
-  const inp = { width: '100%', padding: '13px 16px 13px 44px', border: `1.5px solid ${T.border}`, borderRadius: '10px', fontSize: '15px', outline: 'none', background: T.bgSoft, color: T.text, fontFamily: 'inherit', boxSizing: 'border-box', transition: 'border-color 0.2s' };
+  const inp = { 
+    width: '100%', padding: '13px 16px 13px 44px', border: `1.5px solid ${T.border}`, 
+    borderRadius: '10px', fontSize: '15px', outline: 'none', background: T.bgSoft, 
+    color: T.text, fontFamily: 'inherit', boxSizing: 'border-box', transition: 'border-color 0.2s' 
+  };
 
   return (
     <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
@@ -59,7 +74,9 @@ export default function Login() {
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: '36px', fontWeight: '800', color: 'white', lineHeight: 1.2, marginBottom: '16px' }}>
               Your Next<br />Adventure<br />Awaits
             </h2>
-            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '15px', lineHeight: 1.7 }}>Connect with verified travel agencies<br />and get the best deals for your trips.</p>
+            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '15px', lineHeight: 1.7 }}>
+              Connect with verified travel agencies<br />and get the best deals for your trips.
+            </p>
             <div style={{ display: 'flex', gap: '12px', marginTop: '28px' }}>
               {[['10K+', 'Travelers'], ['500+', 'Agencies'], ['₹0', 'Always Free']].map(([v, l]) => (
                 <div key={l} style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', padding: '12px 16px', borderRadius: '12px', textAlign: 'center' }}>
@@ -76,14 +93,20 @@ export default function Login() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px', background: 'white' }}>
         <div style={{ width: '100%', maxWidth: '400px' }}>
           <div style={{ marginBottom: '32px' }}>
-            <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '32px', fontWeight: '800', color: T.text, marginBottom: '8px' }}>Welcome back</h1>
+            <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '32px', fontWeight: '800', color: T.text, marginBottom: '8px' }}>
+              Welcome back, Traveler
+            </h1>
             <p style={{ color: T.textMid, fontSize: '15px' }}>Sign in to continue your journey</p>
           </div>
 
           {errors.general === 'INVALID_CREDENTIALS' && (
             <div style={{ background: '#fff7f5', border: `1.5px solid ${T.primary}40`, padding: '16px', borderRadius: '12px', marginBottom: '20px' }}>
-              <p style={{ fontSize: '14px', fontWeight: '700', color: T.primary, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}><MdWarning size={16} /> Wrong email or password</p>
-              <button onClick={() => navigate('/forgot-password')} style={{ fontSize: '13px', color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline', padding: 0 }}>Forgot your password?</button>
+              <p style={{ fontSize: '14px', fontWeight: '700', color: T.primary, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <MdWarning size={16} /> Wrong email or password
+              </p>
+              <button onClick={() => navigate('/forgot-password')} style={{ fontSize: '13px', color: T.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline', padding: 0 }}>
+                Forgot your password?
+              </button>
             </div>
           )}
           {errors.general === 'RATE_LIMIT' && (
@@ -92,34 +115,74 @@ export default function Login() {
             </div>
           )}
           {errors.general && !['INVALID_CREDENTIALS', 'RATE_LIMIT'].includes(errors.general) && (
-            <div style={{ background: '#fee2e2', color: '#991b1b', padding: '12px 16px', borderRadius: '10px', marginBottom: '16px', fontSize: '14px' }}>{errors.general}</div>
+            <div style={{ background: '#fee2e2', color: '#991b1b', padding: '12px 16px', borderRadius: '10px', marginBottom: '16px', fontSize: '14px' }}>
+              {errors.general}
+            </div>
           )}
 
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: T.textMid }}>Email Address</label>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: T.textMid }}>
+                Email Address
+              </label>
               <div style={{ position: 'relative' }}>
                 <MdEmail size={18} color={T.textLight} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required style={inp}
-                  onFocus={e => e.target.style.borderColor = T.primary} onBlur={e => e.target.style.borderColor = T.border} />
+                <input 
+                  type="email" 
+                  name="email" 
+                  value={formData.email} 
+                  onChange={handleChange} 
+                  placeholder="you@example.com" 
+                  required 
+                  style={inp}
+                  onFocus={e => e.target.style.borderColor = T.primary} 
+                  onBlur={e => e.target.style.borderColor = T.border} 
+                />
               </div>
             </div>
             <div style={{ marginBottom: '8px' }}>
-              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: T.textMid }}>Password</label>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: T.textMid }}>
+                Password
+              </label>
               <div style={{ position: 'relative' }}>
                 <MdLock size={18} color={T.textLight} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                <input type={showPassword ? 'text' : 'password'} name="password" value={formData.password} onChange={handleChange} placeholder="Enter your password" required style={{ ...inp, paddingRight: '48px' }}
-                  onFocus={e => e.target.style.borderColor = T.primary} onBlur={e => e.target.style.borderColor = T.border} />
-                <button type="button" onClick={() => setShowPassword(v => !v)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}>
+                <input 
+                  type={showPassword ? 'text' : 'password'} 
+                  name="password" 
+                  value={formData.password} 
+                  onChange={handleChange} 
+                  placeholder="Enter your password" 
+                  required 
+                  style={{ ...inp, paddingRight: '48px' }}
+                  onFocus={e => e.target.style.borderColor = T.primary} 
+                  onBlur={e => e.target.style.borderColor = T.border} 
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setShowPassword(v => !v)} 
+                  style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.textLight, display: 'flex' }}
+                >
                   {showPassword ? <MdVisibilityOff size={18} /> : <MdVisibility size={18} />}
                 </button>
               </div>
             </div>
             <div style={{ textAlign: 'right', marginBottom: '24px' }}>
-              <Link to="/forgot-password" style={{ fontSize: '13px', color: T.primary, textDecoration: 'none', fontWeight: '600' }}>Forgot Password?</Link>
+              <Link to="/forgot-password" style={{ fontSize: '13px', color: T.primary, textDecoration: 'none', fontWeight: '600' }}>
+                Forgot Password?
+              </Link>
             </div>
-            <button type="submit" disabled={loading}
-              style={{ width: '100%', padding: '14px', background: loading ? '#e0b0a0' : `linear-gradient(135deg, ${T.primary}, ${T.primaryLight})`, color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer', boxShadow: loading ? 'none' : `0 6px 20px rgba(232,93,38,0.3)`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <button 
+              type="submit" 
+              disabled={loading}
+              style={{ 
+                width: '100%', padding: '14px', 
+                background: loading ? '#e0b0a0' : `linear-gradient(135deg, ${T.primary}, ${T.primaryLight})`, 
+                color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '700', 
+                cursor: loading ? 'not-allowed' : 'pointer', 
+                boxShadow: loading ? 'none' : `0 6px 20px rgba(232,93,38,0.3)`, 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' 
+              }}
+            >
               {loading ? 'Signing in...' : <>Sign In <MdArrowForward size={18} /></>}
             </button>
           </form>
@@ -129,7 +192,7 @@ export default function Login() {
               Don't have an account? <Link to="/signup" style={{ color: T.primary, fontWeight: '700', textDecoration: 'none' }}>Create account</Link>
             </p>
             <p style={{ textAlign: 'center', fontSize: '14px', color: T.textMid }}>
-              Travel agency? <Link to="/agency-signup" style={{ color: T.primary, fontWeight: '700', textDecoration: 'none' }}>Register here</Link>
+              Travel agency? <Link to="/agency-login" style={{ color: T.primary, fontWeight: '700', textDecoration: 'none' }}>Login here</Link>
             </p>
           </div>
         </div>

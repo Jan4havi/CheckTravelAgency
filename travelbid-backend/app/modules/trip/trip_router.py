@@ -17,6 +17,7 @@ Query params for GET /trips:
   start_date_from, start_date_to,
   page (default 1), limit (default 20, max 100)
 """
+
 from typing import Optional
 from uuid import UUID
 
@@ -35,35 +36,41 @@ from app.modules.trip.trip_schema import (
 )
 from app.modules.trip import trip_service
 from datetime import datetime
+from app.core.rbac_dep import require_user_types
 
-trip_router = APIRouter(prefix="/trips", tags=["Trips"])
+trip_router = APIRouter(
+    prefix="/trips",
+    tags=["Trips"],
+)
 
 
 # ─── PUBLIC — Browse & Search ─────────────────────────────────────────────────
 
-@trip_router.get("", response_model=PaginatedTripResponse, summary="Browse & search trips")
+
+@trip_router.get(
+    "", response_model=PaginatedTripResponse, summary="Browse & search trips"
+)
 def list_trips(
     # ── keyword ──────────────────────────────────────
-    keyword: Optional[str] = Query(None, description="Search title, destination, preferences"),
-
+    keyword: Optional[str] = Query(
+        None, description="Search title, destination, preferences"
+    ),
     # ── enum filters ─────────────────────────────────
-    status:      Optional[str] = Query("Live", description="Live | Closed | Expired"),
-    trip_type:   Optional[str] = Query(None,   description="Leisure | Adventure | Romantic | Family …"),
-    trip_scope:  Optional[str] = Query(None,   description="national | international"),
-    destination: Optional[str] = Query(None,   description="Partial match, e.g. 'Goa'"),
-
+    status: Optional[str] = Query("Live", description="Live | Closed | Expired"),
+    trip_type: Optional[str] = Query(
+        None, description="Leisure | Adventure | Romantic | Family …"
+    ),
+    trip_scope: Optional[str] = Query(None, description="national | international"),
+    destination: Optional[str] = Query(None, description="Partial match, e.g. 'Goa'"),
     # ── numeric range ─────────────────────────────────
     travelers_min: Optional[int] = Query(None, ge=1),
     travelers_max: Optional[int] = Query(None, ge=1),
-
     # ── date range ────────────────────────────────────
     start_date_from: Optional[datetime] = Query(None),
-    start_date_to:   Optional[datetime] = Query(None),
-
+    start_date_to: Optional[datetime] = Query(None),
     # ── pagination ────────────────────────────────────
-    page:  int = Query(1,  ge=1),
+    page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-
     db: Session = Depends(get_db),
 ):
     filters = TripFilters(
@@ -82,7 +89,12 @@ def list_trips(
     return trip_service.list_trips(filters, db)
 
 
-@trip_router.get("/my", response_model=list[TripRequestResponse], summary="My trips (traveler)")
+@trip_router.get(
+    "/my",
+    response_model=list[TripRequestResponse],
+    summary="My trips (traveler)",
+    dependencies=[Depends(require_user_types(["traveler"]))],
+)
 def my_trips(
     status: Optional[str] = Query(None, description="Filter by status: Live | Closed"),
     current_user: UserProfile = Depends(get_current_traveler),
@@ -92,7 +104,9 @@ def my_trips(
     return trip_service.list_my_trips(current_user.id, status, db)
 
 
-@trip_router.get("/{trip_id}", response_model=TripRequestResponse, summary="Get trip by ID")
+@trip_router.get(
+    "/{trip_id}", response_model=TripRequestResponse, summary="Get trip by ID"
+)
 def get_trip(
     trip_id: UUID,
     db: Session = Depends(get_db),
@@ -102,7 +116,14 @@ def get_trip(
 
 # ─── TRAVELER — Create ────────────────────────────────────────────────────────
 
-@trip_router.post("", response_model=TripRequestResponse, status_code=201, summary="Post a new trip")
+
+@trip_router.post(
+    "",
+    response_model=TripRequestResponse,
+    status_code=201,
+    summary="Post a new trip",
+    dependencies=[Depends(require_user_types(["traveler"]))],
+)
 def create_trip(
     payload: TripRequestCreate,
     current_user: UserProfile = Depends(get_current_traveler),
@@ -117,7 +138,13 @@ def create_trip(
 
 # ─── TRAVELER — Update ────────────────────────────────────────────────────────
 
-@trip_router.patch("/{trip_id}", response_model=TripRequestResponse, summary="Edit trip (destination locked)")
+
+@trip_router.patch(
+    "/{trip_id}",
+    response_model=TripRequestResponse,
+    summary="Edit trip (destination locked)",
+    dependencies=[Depends(require_user_types(["traveler"]))],
+)
 def update_trip(
     trip_id: UUID,
     payload: TripRequestUpdate,
@@ -133,7 +160,13 @@ def update_trip(
 
 # ─── TRAVELER — Close ─────────────────────────────────────────────────────────
 
-@trip_router.patch("/{trip_id}/close", response_model=TripRequestResponse, summary="Close trip")
+
+@trip_router.patch(
+    "/{trip_id}/close",
+    response_model=TripRequestResponse,
+    summary="Close trip",
+    dependencies=[Depends(require_user_types(["traveler"]))],
+)
 def close_trip(
     trip_id: UUID,
     current_user: UserProfile = Depends(get_current_traveler),
@@ -145,7 +178,12 @@ def close_trip(
 
 # ─── TRAVELER — Delete ────────────────────────────────────────────────────────
 
-@trip_router.delete("/{trip_id}", summary="Delete trip")
+
+@trip_router.delete(
+    "/{trip_id}",
+    summary="Delete trip",
+    dependencies=[Depends(require_user_types(["traveler"]))],
+)
 def delete_trip(
     trip_id: UUID,
     current_user: UserProfile = Depends(get_current_traveler),

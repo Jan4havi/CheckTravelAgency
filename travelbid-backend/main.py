@@ -4,6 +4,11 @@ FastAPI application entry point.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.auth_middleware import AuthMiddleware
+from app.core.rate_limit_middleware import RateLimitMiddleware
+
+
+
 
 from app.auth.router import auth_router as auth_router
 from app.core.config import settings
@@ -34,7 +39,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
+)# Order matters (rate limit first)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(AuthMiddleware)
+
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(auth_router, prefix="/api/v1")
@@ -57,4 +65,4 @@ def health():
 # ── Run locally ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

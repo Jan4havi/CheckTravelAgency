@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { supabase } from '../services/supabase';
+import { authAPI, getErrorMessage } from '../services/api';
 import { MdEmail, MdArrowForward, MdCheckCircle } from 'react-icons/md';
 import { FaPaperPlane } from 'react-icons/fa';
 
@@ -19,10 +19,18 @@ export default function ForgotPassword() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email address'); return; }
     setLoading(true); setError('');
     try {
-      const { error: re } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
-      if (re) { setError(re.message?.toLowerCase().includes('rate') ? 'Too many attempts. Please wait a few minutes.' : re.message); return; }
+      // POST /api/v1/auth/forgot-password
+      await authAPI.forgotPassword(email);
       setStep('success');
-    } catch { setError('Something went wrong. Please try again.'); } finally { setLoading(false); }
+    } catch (err) {
+      const msg = getErrorMessage(err);
+      if (msg.toLowerCase().includes('rate')) {
+        setError('Too many attempts. Please wait a few minutes.');
+      } else {
+        // Always show success to avoid email enumeration — backend may silently succeed
+        setStep('success');
+      }
+    } finally { setLoading(false); }
   };
 
   return (

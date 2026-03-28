@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.user import user_service
 from app.modules.user.user_schema import UserCreate, UserUpdate, UserResponse
+from app.auth.dependencies import get_current_user, CurrentUser
 
 user_router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -10,6 +11,12 @@ user_router = APIRouter(prefix="/users", tags=["Users"])
 @user_router.post("/", response_model=UserResponse)
 def create(data: UserCreate, db: Session = Depends(get_db)):
     return user_service.create_user(db, data)
+
+
+
+@user_router.get("/me", response_model=UserResponse)
+def get_me(current_user: CurrentUser = Depends(get_current_user)):
+    return current_user
 
 
 @user_router.get("/{id}", response_model=UserResponse)
@@ -35,3 +42,8 @@ def list(
     db: Session = Depends(get_db),
 ):
     return user_service.list_users(db, skip, limit, keyword)
+
+
+@user_router.get("/me", response_model=UserResponse)
+def get_me(current_user: CurrentUser = Depends(get_current_user)):
+    return current_user

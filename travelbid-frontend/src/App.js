@@ -1,44 +1,89 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import Profile from './pages/Profile';
-import BidInsights from './pages/BidInsights';
+
+// Auth middleware
+// FROM
+
+// TO
+import { ProtectedRoute, GuestRoute } from './pages/Protectedroute';
+
+// Public pages
 import Home from './pages/home';
+
+// Guest-only pages (redirect to /dashboard if already logged in)
+import TravelerLogin from './pages/TravelerLogin';
+import AgencyLogin from './pages/AgencyLogin';
 import Signup from './pages/signup';
 import AgencyRegister from './pages/AgencyRegister';
-import Login from './pages/login';
-import Dashboard from './pages/dashboard';
-import Messages from './pages/Messages';
-import Invoice from './pages/Invoice';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
-import Support from './pages/Support';
+
+// Protected pages (require login)
+import Dashboard from './pages/dashboard';
+import Profile from './pages/Profile';
 import Membership from './pages/Membership';
+import BidInsights from './pages/BidInsights';
 import Requests from './pages/Requests';
 import TripDetails from './pages/TripDetails';
+import Messages from './pages/Messages';
+import Invoice from './pages/Invoice';
+import Support from './pages/Support';
 
 function App() {
   return (
     <AuthProvider>
       <Router>
         <Routes>
+
+          {/* ── Public ─────────────────────────────────────────────────────── */}
           <Route path="/" element={<Home />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/agency-signup" element={<AgencyRegister />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/membership-plan" element={<Membership />} />
-          <Route path="/bid-insights" element={<BidInsights />} />
-          <Route path="/my-requests" element={<Requests />} />
-          <Route path="/my-lead-details" element={<Requests />} />
-          <Route path="/trip/:id" element={<TripDetails />} />
-          <Route path="/messages" element={<Messages />} />
-          <Route path="/invoice" element={<Invoice />} />
-          <Route path="/support" element={<Support />} />
+
+          {/* ── Guest-only (logged-in users bounce to /dashboard) ───────────── */}
+          <Route path="/login"           element={<GuestRoute><TravelerLogin /></GuestRoute>} />
+          <Route path="/agency-login"    element={<GuestRoute><AgencyLogin /></GuestRoute>} />
+          <Route path="/signup"          element={<GuestRoute><Signup /></GuestRoute>} />
+          <Route path="/agency-signup"   element={<GuestRoute><AgencyRegister /></GuestRoute>} />
+          <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
+          <Route path="/reset-password"  element={<GuestRoute><ResetPassword /></GuestRoute>} />
+
+          {/* ── Protected (any logged-in user) ─────────────────────────────── */}
+          <Route path="/dashboard"       element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/profile"         element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/membership-plan" element={<ProtectedRoute><Membership /></ProtectedRoute>} />
+          <Route path="/messages"        element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+          <Route path="/invoice"         element={<ProtectedRoute><Invoice /></ProtectedRoute>} />
+          <Route path="/support"         element={<ProtectedRoute><Support /></ProtectedRoute>} />
+          <Route path="/trip/:id"        element={<ProtectedRoute><TripDetails /></ProtectedRoute>} />
+
+          {/* ── Traveler-only ───────────────────────────────────────────────── */}
+          <Route path="/my-requests"
+            element={
+              <ProtectedRoute userType="traveler">
+                <Requests />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ── Agency-only ────────────────────────────────────────────────── */}
+          <Route path="/bid-insights"
+            element={
+              <ProtectedRoute userType="agency">
+                <BidInsights />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/my-lead-details"
+            element={
+              <ProtectedRoute userType="agency">
+                <Requests />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ── 404 fallback ────────────────────────────────────────────────── */}
           <Route path="*" element={<Navigate to="/" replace />} />
+
         </Routes>
       </Router>
     </AuthProvider>
